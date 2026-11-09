@@ -168,7 +168,7 @@ export async function analyzeCVWithAI(
   let rawResponse = "";
   try {
     const res = await aiClient.chat.completions.create({
-      model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+      model: process.env.GEMINI_MODEL || "gemini-3.5-flash",
       messages: [
         { role: "system", content: CV_ANALYSIS_SYSTEM_PROMPT },
         {
