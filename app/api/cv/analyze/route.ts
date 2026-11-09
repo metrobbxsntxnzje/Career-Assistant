@@ -133,42 +133,59 @@ export async function POST(request: Request) {
       },
     });
 
-    // ── Bước 4: Lưu Skills vào DB (batch transaction, có category) ───────────
-    // Gộp technical + soft kèm theo category tương ứng
-    const skillsWithCategory: { name: string; category: "technical" | "soft" }[] = [
-      ...analysisResult.skills.technical.map((name) => ({
-        name,
-        category: "technical" as const,
-      })),
-      ...analysisResult.skills.soft.map((name) => ({
-        name,
-        category: "soft" as const,
-      })),
-    ];
+    // ── Bước 4: Lưu Skills vào DB (Deduplicated & Non-blocking) ─────────────
+    try {
+      const allSkills: { name: string; category: "technical" | "soft" }[] = [
+        ...analysisResult.skills.technical.map((name) => ({
+          name: name.trim(),
+          category: "technical" as const,
+        })),
+        ...analysisResult.skills.soft.map((name) => ({
+          name: name.trim(),
+          category: "soft" as const,
+        })),
+      ].filter((s) => s.name.length > 0);
 
-    if (skillsWithCategory.length > 0) {
-      await prisma.$transaction(async (tx) => {
-        for (const { name: skillName, category } of skillsWithCategory) {
-          // Tìm skill theo tên (không phân biệt hoa thường)
-          let skill = await tx.skill.findFirst({
-            where: { name: { equals: skillName, mode: "insensitive" } },
+      // Loại bỏ trùng lặp tên skill
+      const uniqueSkillMap = new Map<string, "technical" | "soft">();
+      for (const item of allSkills) {
+        const lower = item.name.toLowerCase();
+        if (!uniqueSkillMap.has(lower)) {
+          uniqueSkillMap.set(lower, item.category);
+        }
+      }
+
+      // Xử lý từng skill không dùng interactive transaction để tránh timeout trên cloud serverless
+      for (const [lowerName, category] of uniqueSkillMap.entries()) {
+        try {
+          let skill = await prisma.skill.findFirst({
+            where: { name: { equals: lowerName, mode: "insensitive" } },
           });
 
-          // Nếu chưa có thì tạo mới — kèm category
           if (!skill) {
-            skill = await tx.skill.create({
-              data: { name: skillName, category },
+            const originalName =
+              allSkills.find((s) => s.name.toLowerCase() === lowerName)?.name || lowerName;
+            skill = await prisma.skill.create({
+              data: { name: originalName, category },
             });
           }
 
-          // Tạo liên kết CVSkill — bỏ qua nếu đã tồn tại (unique constraint)
-          await tx.cVSkill
-            .create({
+          const existingLink = await prisma.cVSkill.findFirst({
+            where: { cvId: cv.id, skillId: skill.id },
+          });
+
+          if (!existingLink) {
+            await prisma.cVSkill.create({
               data: { cvId: cv.id, skillId: skill.id },
-            })
-            .catch(() => null);
+            });
+          }
+        } catch (itemErr) {
+          // Bỏ qua lỗi 1 skill lẻ, không làm gián đoạn
+          console.warn(`[cv/analyze] Failed to link skill "${lowerName}":`, itemErr);
         }
-      });
+      }
+    } catch (skillSyncError) {
+      console.warn("[cv/analyze] Non-fatal error during skill sync:", skillSyncError);
     }
 
     return NextResponse.json({
