@@ -29,16 +29,18 @@ const MAX_CV_CHARS = 12_000;
 
 // ── Tiền xử lý text CV trước khi gửi AI ─────────────────────────────────────
 function preprocessCVText(text: string): string {
-  return text
-    // Loại bỏ dòng chỉ chứa số trang
-    .replace(/^(page\s*\d+|\d+\s*of\s*\d+)$/gim, "")
-    // Gộp từ bị tách dòng ngắn (hay gặp ở PDF 2 cột)
-    .replace(/([a-z,])\n([a-z])/g, "$1 $2")
-    // Rút gọn URL quá dài
-    .replace(/https?:\/\/\S{80,}/g, "[URL]")
-    // Loại bỏ dòng trắng thừa
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    text
+      // Loại bỏ dòng chỉ chứa số trang
+      .replace(/^(page\s*\d+|\d+\s*of\s*\d+)$/gim, "")
+      // Gộp từ bị tách dòng ngắn (hay gặp ở PDF 2 cột)
+      .replace(/([a-z,])\n([a-z])/g, "$1 $2")
+      // Rút gọn URL quá dài
+      .replace(/https?:\/\/\S{80,}/g, "[URL]")
+      // Loại bỏ dòng trắng thừa
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 }
 
 // ── System Prompt ─────────────────────────────────────────────────────────────
@@ -166,7 +168,7 @@ export async function analyzeCVWithAI(
   let rawResponse = "";
   try {
     const res = await aiClient.chat.completions.create({
-      model: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+      model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
       messages: [
         { role: "system", content: CV_ANALYSIS_SYSTEM_PROMPT },
         {
